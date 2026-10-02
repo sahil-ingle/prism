@@ -1,24 +1,31 @@
+from __future__ import annotations
+
 from typing import Any
+from urllib.parse import quote
 
-import httpx
-
-from ..models import IOC, IOCType, ProviderResult
+from prism.models import IOC, IOCType, ProviderResult
 
 
 class URLScanProvider:
     name = "urlscan.io"
-    base_url = "https://urlscan.io"
 
-    def __init__(self, api_key: str | None, client: httpx.Client, result_limit: int = 5):
+    def __init__(
+        self,
+        api_key: str | None,
+        client,
+        result_limit: int = 5,
+        timeout: float = 15,
+        ):
         self.api_key = api_key
         self.client = client
         self.result_limit = result_limit
+        self.timeout = timeout
 
     def supports(self, ioc_type: IOCType) -> bool:
         return ioc_type in {
-            IOCType.URL,
-            IOCType.DOMAIN,
             IOCType.IPV4,
+            IOCType.DOMAIN,
+            IOCType.URL,
             IOCType.MD5,
             IOCType.SHA1,
             IOCType.SHA256,
@@ -32,77 +39,184 @@ class URLScanProvider:
                 error="URLSCAN_API_KEY is not configured.",
             )
 
-        query = self._query(ioc)
-        response = self.client.get(
-            f"{self.base_url}/api/v1/search/",
-            params={"q": query, "size": self.result_limit},
-            headers={"api-key": self.api_key, "accept": "application/json"},
-        )
+        try:
+            query = self._build_query(ioc)
 
-        if response.status_code >= 400:
+            response = self.client.get(
+                "https://urlscan.io/api/v1/search/",
+                params={
+                    "q": query,
+                    "size": self.result_limit,
+                },
+                headers={
+                    "api-key": self.api_key,
+                },
+                timeout=self.timeout,
+            )
+
+            response.raise_for_status()
+            search_data = response.json()
+
+            results = search_data.get("results", [])
+
+            if not results:
+                return ProviderResult(
+                    provider=self.name,
+                    status="success",
+                    data={
+                        "query": query,
+                        "found": False,
+                    },
+                )
+
+            # Pick the first relevant result.
+            scan = self._find_relevant_result(results, ioc)
+
+            if not scan:
+                return ProviderResult(
+                    provider=self.name,
+                    status="success",
+                    data={
+                        "query": query,
+                        "found": False,
+                    },
+                )
+
+            scan_id = scan.get("_id")
+
+            if not scan_id:
+                return ProviderResult(
+                    provider=self.name,
+                    status="error",
+                    error="urlscan search result did not contain a scan ID.",
+                )
+
+            # Fetch the complete scan.
+            result_response = self.client.get(
+                f"https://urlscan.io/api/v1/result/{quote(scan_id)}/",
+                headers={
+                    "api-key": self.api_key,
+                },
+                timeout=self.timeout,
+            )
+
+            result_response.raise_for_status()
+            result_data = result_response.json()
+
+            return ProviderResult(
+                provider=self.name,
+                status="success",
+                data=self._normalize_result(
+                    result_data,
+                    query=query,
+                    scan_id=scan_id,
+                ),
+            )
+
+        except Exception as exc:
             return ProviderResult(
                 provider=self.name,
                 status="error",
-                error=f"HTTP {response.status_code}: {self._error_message(response)}",
+                error=str(exc),
             )
 
-        payload = response.json()
-        results = payload.get("results", [])
-
-        return ProviderResult(
-            provider=self.name,
-            status="success",
-            data={
-                "query": query,
-                "total": payload.get("total", 0),
-                "results": [self._compact_result(item) for item in results],
-            },
-        )
-
-    @staticmethod
-    def _query(ioc: IOC) -> str:
-        if ioc.type == IOCType.URL:
-            # Search historical scans by exact page URL.
-            escaped = ioc.value.replace("\\", "\\\\").replace('"', '\\"')
-            return f'page.url:"{escaped}"'
+    def _build_query(self, ioc: IOC) -> str:
         if ioc.type == IOCType.DOMAIN:
-            return f"domain:{ioc.value}"
+            return f"page.domain:{ioc.value}"
+
         if ioc.type == IOCType.IPV4:
-            return f"ip:{ioc.value}"
-        # urlscan's search index exposes hash-related fields. The generic hash
-        # query is intentionally kept isolated here so it can be adjusted
-        # without touching the engine if their search syntax evolves.
+            return f"page.ip:{ioc.value}"
+
+        if ioc.type == IOCType.URL:
+            return f'page.url:"{ioc.value}"'
+
         return f"hash:{ioc.value}"
 
-    @staticmethod
-    def _error_message(response: httpx.Response) -> str:
-        try:
-            payload = response.json()
-            return payload.get("message") or payload.get("error") or response.text
-        except Exception:
-            return response.text
+    def _find_relevant_result(
+        self,
+        results: list[dict[str, Any]],
+        ioc: IOC,
+    ) -> dict[str, Any] | None:
 
-    @staticmethod
-    def _compact_result(item: dict[str, Any]) -> dict[str, Any]:
-        page = item.get("page") or {}
-        task = item.get("task") or {}
-        stats = item.get("stats") or {}
+        value = ioc.value.lower().rstrip(".")
+
+        for result in results:
+            page = result.get("page", {})
+
+            domain = str(
+                page.get("domain", "")
+            ).lower().rstrip(".")
+
+            ip = str(page.get("ip", ""))
+
+            if ioc.type == IOCType.DOMAIN:
+                if domain == value or domain.endswith("." + value):
+                    return result
+
+            elif ioc.type == IOCType.IPV4:
+                if ip == value:
+                    return result
+
+            elif ioc.type == IOCType.URL:
+                page_url = str(page.get("url", "")).lower()
+
+                if page_url == value:
+                    return result
+
+            else:
+                # Hash results are already constrained by the query.
+                return result
+
+        return None
+
+    def _normalize_result(
+        self,
+        result: dict[str, Any],
+        query: str,
+        scan_id: str,
+    ) -> dict[str, Any]:
+
+        page = result.get("page", {})
+        stats = result.get("stats", {})
+        lists = result.get("lists", {})
+        task = result.get("task", {})
 
         return {
-            "scan_id": item.get("_id"),
-            "time": item.get("task", {}).get("time") or task.get("time"),
-            "url": page.get("url"),
-            "domain": page.get("domain"),
-            "ip": page.get("ip"),
-            "country": page.get("country"),
-            "asn": page.get("asn"),
-            "asnname": page.get("asnname"),
-            "status": page.get("status"),
-            "unique_ips": stats.get("uniqIPs"),
-            "unique_countries": stats.get("uniqCountries"),
-            "result_url": (
-                f"https://urlscan.io/result/{item.get('_id')}/"
-                if item.get("_id")
-                else None
-            ),
+            "query": query,
+            "scan_id": scan_id,
+            "scan_time": task.get("time"),
+
+            "page": {
+                "url": page.get("url"),
+                "domain": page.get("domain"),
+                "ip": page.get("ip"),
+                "country": page.get("country"),
+                "asn": page.get("asn"),
+                "asnname": page.get("asnname"),
+                "status": page.get("status"),
+                "title": page.get("title"),
+                "umbrella_rank": page.get("umbrellaRank"),
+            },
+
+            "stats": {
+                "ips": stats.get("uniqIPs"),
+                "countries": stats.get("uniqCountries"),
+                "requests": stats.get("requests"),
+                "domains": len(lists.get("domains", [])),
+            },
+
+            "tls": {
+                "issuer": page.get("tlsIssuer"),
+                "age_days": page.get("tlsAgeDays"),
+                "valid_days": page.get("tlsValidDays"),
+                "valid_from": page.get("tlsValidFrom"),
+            },
+
+            "lists": {
+                "ips": lists.get("ips", []),
+                "countries": lists.get("countries", []),
+                "domains": lists.get("domains", []),
+            },
+
+            "result_url": f"https://urlscan.io/result/{scan_id}/",
         }

@@ -1,7 +1,9 @@
 from ..config import Settings
 from ..http import build_client
+
 from .urlscan import URLScanProvider
 from .virustotal import VirusTotalProvider
+from .abuseipdb import AbuseIPDBProvider
 
 
 def build_providers(settings: Settings):
@@ -10,10 +12,17 @@ def build_providers(settings: Settings):
     client = build_client(settings.timeout)
 
     return [
-        VirusTotalProvider(settings.virustotal_api_key, client),
+        VirusTotalProvider(
+            settings.virustotal_api_key,
+            client,
+        ),
         URLScanProvider(
             settings.urlscan_api_key,
             client,
             result_limit=settings.urlscan_results,
+        ),
+        AbuseIPDBProvider(
+            settings.abuseipdb_api_key,
+            client,
         ),
     ]

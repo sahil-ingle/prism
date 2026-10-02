@@ -1,4 +1,5 @@
 import os
+
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -15,6 +16,7 @@ load_dotenv(ENV_FILE)
 class Settings:
     virustotal_api_key: str | None
     urlscan_api_key: str | None
+    abuseipdb_api_key: str | None
     timeout: float = 15.0
     urlscan_results: int = 5
 
@@ -36,6 +38,8 @@ def load_settings() -> Settings:
     return Settings(
         virustotal_api_key=os.getenv("VIRUSTOTAL_API_KEY") or None,
         urlscan_api_key=os.getenv("URLSCAN_API_KEY") or None,
+        abuseipdb_api_key=os.getenv("ABUSEIPDB_API_KEY") or None,
         timeout=timeout,
         urlscan_results=results,
     )
+
