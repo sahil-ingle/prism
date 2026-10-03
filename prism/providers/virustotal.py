@@ -63,6 +63,7 @@ class VirusTotalProvider:
             provider=self.name,
             status="success",
             data=self._normalize(payload, ioc),
+            raw_data=payload,
         )
 
     @staticmethod

@@ -115,6 +115,7 @@ class URLQueryProvider:
             provider=self.name,
             status="success",
             data=data,
+            raw_data=payload,
         )
 
     def _lookup_domain(self, ioc: IOC) -> ProviderResult:
@@ -125,6 +126,10 @@ class URLQueryProvider:
         existing = self._search_reports(ioc)
         if existing.status == "success" and existing.data.get("found"):
             existing.data["reputation"] = reputation.data
+            existing.raw_data = {
+                "report": existing.raw_data,
+                "reputation": reputation.raw_data,
+            }
             return existing
 
         # URLQuery's sandbox accepts URLs, so turn a bare domain into a
@@ -132,6 +137,10 @@ class URLQueryProvider:
         scanned = self._submit_and_scan(f"https://{ioc.value}")
         if scanned.status == "success":
             scanned.data["reputation"] = reputation.data
+            scanned.raw_data = {
+                "report": scanned.raw_data,
+                "reputation": reputation.raw_data,
+            }
 
         return scanned
 
@@ -144,6 +153,10 @@ class URLQueryProvider:
         existing = self._search_reports(ioc)
         if existing.status == "success" and existing.data.get("found"):
             existing.data["reputation"] = reputation.data
+            existing.raw_data = {
+                "report": existing.raw_data,
+                "reputation": reputation.raw_data,
+            }
             return existing
 
         return reputation
@@ -183,6 +196,7 @@ class URLQueryProvider:
                     "found": False,
                     "source": "report_search",
                 },
+                raw_data=payload,
             )
 
         # Prefer a report whose URL/domain/hash actually contains the IOC.
@@ -197,6 +211,7 @@ class URLQueryProvider:
                     "found": False,
                     "source": "report_search",
                 },
+                raw_data=payload,
             )
 
         report_id = selected.get("report_id")
@@ -210,6 +225,7 @@ class URLQueryProvider:
                     "source": "report_search",
                     "report": selected,
                 },
+                raw_data=selected,
             )
 
         report = self._get_report(report_id)
@@ -221,6 +237,7 @@ class URLQueryProvider:
                 query=ioc.value,
                 source="report_search",
             ),
+            raw_data=report,
         )
 
     def _submit_and_scan(self, url: str) -> ProviderResult:
@@ -329,6 +346,10 @@ class URLQueryProvider:
                 source="submission",
                 queue_id=queue_id,
             ),
+            raw_data={
+                "submission": last_queue,
+                "report": report,
+            },
         )
 
     def _get_report(self, report_id: str) -> dict[str, Any]:

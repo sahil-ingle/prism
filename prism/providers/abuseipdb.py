@@ -47,7 +47,8 @@ class AbuseIPDBProvider(ThreatProvider):
 
             response.raise_for_status()
 
-            data = response.json().get("data", {})
+            payload = response.json()
+            data = payload.get("data", {}) if isinstance(payload, dict) else {}
 
             confidence = data.get(
                 "abuseConfidenceScore",
@@ -87,6 +88,7 @@ class AbuseIPDBProvider(ThreatProvider):
                     ),
                 },
                 error=None,
+                raw_data=payload,
             )
 
         except Exception as exc:

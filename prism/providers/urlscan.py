@@ -67,6 +67,7 @@ class URLScanProvider:
                         "query": query,
                         "found": False,
                     },
+                    raw_data=search_data,
                 )
 
             # Pick the first relevant result.
@@ -80,6 +81,7 @@ class URLScanProvider:
                         "query": query,
                         "found": False,
                     },
+                    raw_data=search_data,
                 )
 
             scan_id = scan.get("_id")
@@ -111,6 +113,7 @@ class URLScanProvider:
                     query=query,
                     scan_id=scan_id,
                 ),
+                raw_data=result_data,
             )
 
         except Exception as exc:

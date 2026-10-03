@@ -49,15 +49,18 @@ The GUI runs investigations in a background thread so URLQuery submissions/polli
 
 ## What the desktop window provides
 
-- Minimal dark Windows-friendly interface
+- Polished light/dark Windows-friendly interface with a matching tab-bar/ttk theme
 - Single IOC input field
 - Automatic IOC type detection
 - Background provider execution so the UI stays responsive
+- Stop button to cancel the current investigation from the UI and immediately search another IOC
+- Results from an old/stopped search are ignored so they cannot overwrite a newer search
 - Separate result cards for VirusTotal, URLScan, URLQuery and AbuseIPDB
 - Provider status and errors
 - Copy complete investigation JSON to clipboard
 - Enter = investigate
-- Escape = clear
+- Escape = stop while investigating, otherwise clear
+- Footer attribution: Created by Sahil
 
 ## Windows 11 notes
 
