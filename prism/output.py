@@ -87,6 +87,9 @@ def _render_provider(
     elif result.provider == "AbuseIPDB":
         _render_abuseipdb(result.data)
 
+    elif result.provider == "urlquery.net":
+        _render_urlquery(result.data)
+
     else:
         console.print_json(
             json.dumps(result.data, default=str)
@@ -212,6 +215,103 @@ def _render_abuseipdb(data: dict[str, Any]) -> None:
             )
 
     console.print(table)
+
+
+def _render_urlquery(data: dict[str, Any]) -> None:
+    table = Table(
+        show_header=False,
+        box=None,
+        padding=(0, 2),
+    )
+
+    table.add_column(style="dim", no_wrap=True)
+    table.add_column()
+
+    source = data.get("source")
+    if source:
+        table.add_row("Source", str(source).replace("_", " ").title())
+
+    if data.get("query"):
+        table.add_row("Query", str(data["query"]))
+
+    verdict = data.get("verdict")
+    if verdict:
+        verdict_lower = str(verdict).lower()
+        if verdict_lower in {"malware", "phishing", "fraud", "malicious"}:
+            verdict_display = f"[red]{verdict}[/red]"
+        elif verdict_lower in {"suspicious"}:
+            verdict_display = f"[yellow]{verdict}[/yellow]"
+        elif verdict_lower in {"unknown", "unclassified"}:
+            verdict_display = f"[yellow]{verdict}[/yellow]"
+        else:
+            verdict_display = f"[green]{verdict}[/green]"
+        table.add_row("Verdict", verdict_display)
+
+    for label, key in (
+        ("URL", "submitted_url"),
+        ("Final URL", "final_url"),
+        ("Domain", "domain"),
+        ("FQDN", "fqdn"),
+        ("IP", "ip"),
+        ("Title", "final_title"),
+        ("Report", "report_id"),
+        ("Scan Status", "scan_status"),
+    ):
+        value = data.get(key)
+        if value is not None and value != "":
+            table.add_row(label, str(value))
+
+    alert_count = data.get("alert_count") or {}
+    counts = [
+        ("URLQuery Alerts", alert_count.get("urlquery")),
+        ("IDS Alerts", alert_count.get("ids")),
+        ("Analyzer Alerts", alert_count.get("analyzer")),
+    ]
+    if any(value is not None for _, value in counts):
+        for label, value in counts:
+            if value is not None:
+                table.add_row(label, str(value))
+
+    if table.row_count:
+        console.print(table)
+
+    alerts = data.get("alerts") or []
+    if alerts:
+        console.print()
+        console.print("  [bold]ALERTS[/bold]")
+
+        alert_table = Table(
+            show_header=True,
+            box=None,
+            padding=(0, 2),
+        )
+        alert_table.add_column("Severity", style="dim")
+        alert_table.add_column("Verdict")
+        alert_table.add_column("Alert")
+        alert_table.add_column("Sensor")
+
+        for alert in alerts[:20]:
+            severity = alert.get("severity") or "—"
+            alert_verdict = alert.get("verdict") or "—"
+            alert_name = alert.get("alert") or alert.get("comment") or "—"
+            sensor = alert.get("sensor") or "—"
+
+            alert_table.add_row(
+                str(severity),
+                str(alert_verdict),
+                str(alert_name),
+                str(sensor),
+            )
+
+        console.print(alert_table)
+
+    result_url = data.get("result_url")
+    queue_url = data.get("queue_url")
+
+    if result_url:
+        console.print(f"\n  [dim]Result:[/dim] {result_url}")
+    elif queue_url:
+        console.print(f"\n  [dim]Queue:[/dim] {queue_url}")
 
 
 def _render_urlscan(data: dict[str, Any]) -> None:
